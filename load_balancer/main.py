@@ -10,7 +10,6 @@ from consistent_hash import ConsistentHashRing
 app = FastAPI()
 client = docker.from_env()
 
-# Constants
 IMAGE_NAME = "fastapi-server"
 NETWORK_NAME = "net1"
 BASE_PORT = 5000
@@ -21,12 +20,10 @@ try:
 except docker.errors.NotFound:
     client.networks.create(NETWORK_NAME, driver="bridge")
 
-# Consistent hashing ring
+# Global state
 ring = ConsistentHashRing()
-replicas = {}  # container name → server_id
+replicas = {}  # container name -> server_id
 
-
-# Request models
 class AddRequest(BaseModel):
     n: int
     hostnames: List[str] = []
@@ -35,12 +32,6 @@ class RemoveRequest(BaseModel):
     n: int
     hostnames: List[str] = []
 
-class MapResponse(BaseModel):
-    request_id: int
-    assigned_server: int
-
-
-# Utilities
 def random_name(length=5):
     return "srv-" + ''.join(random.choices(string.ascii_lowercase, k=length))
 
@@ -62,9 +53,6 @@ def stop_server(name: str):
     except docker.errors.NotFound:
         pass
 
-
-# Endpoints
-
 @app.get("/rep")
 def get_replicas():
     return {
@@ -78,12 +66,12 @@ def get_replicas():
 @app.post("/add")
 def add_servers(req: AddRequest):
     if len(req.hostnames) > req.n:
-        raise HTTPException(status_code=400, detail="Length of hostname list is more than newly added instances")
+        raise HTTPException(status_code=400, detail="Too many hostnames")
 
     new_servers = []
     for i in range(req.n):
         name = req.hostnames[i] if i < len(req.hostnames) else random_name()
-        server_id = len(ring.ring) + i + 1
+        server_id = max(ring.ring.values(), default=0) + i + 1
         start_server(server_id, name)
         ring.add_server(server_id)
         replicas[name] = server_id
@@ -100,7 +88,7 @@ def add_servers(req: AddRequest):
 @app.delete("/rm")
 def remove_servers(req: RemoveRequest):
     if len(req.hostnames) > req.n:
-        raise HTTPException(status_code=400, detail="Length of hostname list is more than removable instances")
+        raise HTTPException(status_code=400, detail="Too many hostnames")
 
     to_remove = req.hostnames[:]
     if len(to_remove) < req.n:
@@ -109,7 +97,9 @@ def remove_servers(req: RemoveRequest):
 
     for name in to_remove:
         stop_server(name)
-        replicas.pop(name, None)  # optionally remove from hash ring if stored
+        sid = replicas.pop(name, None)
+        if sid:
+            ring.remove_server(sid)
 
     return {
         "message": {
@@ -125,15 +115,19 @@ def route_request(path: str, request: Request):
         request_id = random.randint(100000, 999999)
         server_id = ring.get_server(request_id)
 
-        # Find the corresponding container name
-        for name, sid in replicas.items():
-            if sid == server_id:
-                url = f"http://{name.lower()}:{BASE_PORT}/path"
-                res = requests.get(url)
-                return res.json()
+        matched = [(name, sid) for name, sid in replicas.items() if sid == server_id]
+        if not matched:
+            print(f"[WARN] Server ID {server_id} not found in replicas: {replicas}")
+            raise HTTPException(status_code=503, detail=f"Server ID {server_id} not found")
 
-        raise HTTPException(status_code=500, detail="No matching server found")
+        name, _ = matched[0]
+        url = f"http://{name.lower()}:{BASE_PORT}/{path}"
+        try:
+            res = requests.get(url, timeout=1)
+            return res.json()
+        except requests.exceptions.RequestException as e:
+            print(f"[ERROR] Failed to reach {url}: {e}")
+            raise HTTPException(status_code=502, detail="Backend request failed")
 
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
-
