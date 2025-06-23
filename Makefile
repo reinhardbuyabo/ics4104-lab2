@@ -1,29 +1,44 @@
-IMAGE_NAME=fastapi-server
-CONTAINER_NAME=server1
-port=5000
-SERVER_ID=1
+# Task 1: Server container
+SERVER_IMAGE=fastapi-server
 
-.PHONY: all build run stop rebuild clean
+# Task 3: Load balancer
+LB_DIR=load_balancer
+LB_IMAGE=loadbalancer
+COMPOSE=docker-compose
+PORT=5000
 
-# Default Target
-all: build run
+.PHONY: all build-server run-server stop-server build-lb up-lb down-lb rebuild clean
 
-# Build the Docker image
-build:
-	docker build -t $(IMAGE_NAME) .
+# Run both
+all: build-server run-server
 
-# Run the Docker Container
-run:
-	docker run --rm -e SERVER_ID=$(SERVER_ID) -p $(PORT):5000 --name $(CONTAINER_NAME) $(IMAGE_NAME)
+### Task 1: Server Commands ###
 
-# Stop the running container
-stop:
-	docker stop $(CONTAINER_NAME) || true
-	docker rm $(CONTAINER_NAME) || true
+build-server:
+	docker build -t $(SERVER_IMAGE) .
 
-# Rebuild and rerun
-rebuild: stop build run
+run-server:
+	docker run --rm -e SERVER_ID=1 -p $(PORT):5000 --name server1 $(SERVER_IMAGE)
 
-# Clean up dangling images
+stop-server:
+	docker stop server1 || true
+	docker rm server1 || true
+
+### Task 3: Load Balancer Commands ###
+
+build-lb:
+	$(COMPOSE) build
+
+up-lb:
+	$(COMPOSE) up -d
+
+down-lb:
+	$(COMPOSE) down
+
+rebuild: down-lb build-lb up-lb
+
+### Clean Docker artifacts ###
 clean:
 	docker image prune -f
+	docker container prune -f
+

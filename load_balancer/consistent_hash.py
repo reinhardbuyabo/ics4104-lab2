@@ -1,4 +1,5 @@
 import bisect
+
 import math
 
 class ConsistentHashRing:

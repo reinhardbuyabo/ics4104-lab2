@@ -1,0 +1,26 @@
+services:
+  loadbalancer:
+    build: ./load_balancer
+    container_name: lb
+    privileged: true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - net1
+    ports:
+      - "5000:5000"
+
+  dummy:
+    build: ./server
+    image: fastapi-server
+    entrypoint: ["sleep", "infinity"]
+    networks:
+      - net1
+    deploy:
+      replicas: 0   # this service is never run directly — it's just here to build the image
+
+networks:
+  net1:
+    name: net1
+    driver: bridge
+
