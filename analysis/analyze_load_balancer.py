@@ -4,7 +4,7 @@ from collections import Counter
 import os
 
 BASE_URL = "http://localhost:5000"
-N = 1000  # number of simulated requests
+N = 10000
 PLOT_DIR = "analysis/plots"
 os.makedirs(PLOT_DIR, exist_ok=True)
 

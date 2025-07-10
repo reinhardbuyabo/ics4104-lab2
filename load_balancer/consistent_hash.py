@@ -40,3 +40,10 @@ class ConsistentHashRing:
 
         assigned_slot = self.sorted_slots[idx]
         return self.ring[assigned_slot]
+    
+    def remove_server(self, server_id: int):
+        to_remove = [slot for slot, sid in self.ring.items() if sid == server_id]
+        for slot in to_remove:
+            del self.ring[slot]
+        self.sorted_slots = sorted(self.ring.keys())
+
