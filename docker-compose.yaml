@@ -12,7 +12,7 @@ services:
 
   dummy:
     build: ./server
-    image: fastapi-server
+    image: reinhardb/fastapi-server
     entrypoint: ["sleep", "infinity"]
     networks:
       - net1

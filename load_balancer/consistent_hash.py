@@ -52,6 +52,15 @@ class ConsistentHashRing:
         target_slot = self.sorted_slots[idx]
         return self.ring[target_slot]
 
+        assigned_slot = self.sorted_slots[idx]
+        return self.ring[assigned_slot]
+    
+    def remove_server(self, server_id: int):
+        to_remove = [slot for slot, sid in self.ring.items() if sid == server_id]
+        for slot in to_remove:
+            del self.ring[slot]
+        self.sorted_slots = sorted(self.ring.keys())
+
     # Optional: return current mapping (useful for debugging or /rep endpoint)
     def get_ring_snapshot(self):
         return {slot: self.ring[slot] for slot in self.sorted_slots}
