@@ -21,8 +21,7 @@ class ConsistentHashRing:
             while slot in self.ring:
                 slot = (slot + 1) % self.slots
                 if slot == original_slot:
-                    raise Exception("Hash ring is full")
-
+                    raise Exception("Hash ring is full!")
             self.ring[slot] = server_id
             bisect.insort(self.sorted_slots, slot)
 
