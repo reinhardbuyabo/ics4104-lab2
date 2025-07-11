@@ -1,29 +1,25 @@
 import bisect
 import hashlib
-
-M = 512  # total slots
-K = 9    # virtual servers per physical server
-
-
 class ConsistentHashRing:
-    def __init__(self):
-        self.ring = dict()  # slot_index -> server_id
+    def __init__(self, slots=512, virtual_nodes=100):
+        self.slots = slots
+        self.virtual_nodes = virtual_nodes
+        self.ring = {}  # slot -> server_id
         self.sorted_slots = []
 
-    def _hash_request(self, i: int) -> int:
-        return (i ** 2 + 2 * i + 17) % M
-
-    def _hash_virtual_server(self, i: int, j: int) -> int:
-        return (i ** 2 + j + 2 * j + 25) % M
+    def _hash(self, key: str) -> int:
+        h = hashlib.sha256(key.encode()).hexdigest()
+        return int(h, 16) % self.slots
 
     def add_server(self, server_id: int):
-        for j in range(K):
-            slot = self._hash_virtual_server(server_id, j)
-            original_slot = slot
+        for j in range(self.virtual_nodes):
+            key = f"{server_id}-vn{j}"
+            slot = self._hash(key)
 
-            # Handle collisions with linear probing
+            # Avoid collision: use linear probing
+            original_slot = slot
             while slot in self.ring:
-                slot = (slot + 1) % M
+                slot = (slot + 1) % self.slots
                 if slot == original_slot:
                     raise Exception("Hash ring is full")
 
@@ -31,19 +27,16 @@ class ConsistentHashRing:
             bisect.insort(self.sorted_slots, slot)
 
     def get_server(self, request_id: int) -> int:
-        request_slot = self._hash_request(request_id)
+        key = str(request_id)
+        request_slot = self._hash(key)
         idx = bisect.bisect_right(self.sorted_slots, request_slot)
-
-        # wrap around if needed
         if idx == len(self.sorted_slots):
             idx = 0
-
         assigned_slot = self.sorted_slots[idx]
         return self.ring[assigned_slot]
-    
+
     def remove_server(self, server_id: int):
         to_remove = [slot for slot, sid in self.ring.items() if sid == server_id]
         for slot in to_remove:
             del self.ring[slot]
         self.sorted_slots = sorted(self.ring.keys())
-

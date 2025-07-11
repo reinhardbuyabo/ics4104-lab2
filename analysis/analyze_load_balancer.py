@@ -1,5 +1,6 @@
 import requests
 import matplotlib.pyplot as plt
+import concurrent.futures
 from collections import Counter
 import os
 
@@ -17,38 +18,57 @@ def reset_servers():
     except Exception as e:
         print("Error resetting servers:", e)
 
-def simulate_requests():
-    result = []
+def simulate_requests(n_requests=10000):
+    server_ids = []
     skipped = 0
-    for _ in range(N):
+
+    def send_request(_):
         try:
             res = requests.get(f"{BASE_URL}/home", timeout=1)
             data = res.json()
-            if "message" not in data:
+            return data.get("message")  # e.g. "Hello from Server: 21"
+        except:
+            return None
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=100) as executor:
+        results = executor.map(send_request, range(n_requests))
+
+    for msg in results:
+        if msg and "Server:" in msg:
+            try:
+                sid = int(msg.split("Server:")[1].strip())
+                server_ids.append(sid)
+            except ValueError:
                 skipped += 1
-                continue
-            msg = data["message"]
-            if "Server:" in msg:
-                server_id = int(msg.split("Server:")[-1].strip())
-                result.append(server_id)
-        except Exception as e:
+        else:
             skipped += 1
-    return result, skipped
 
-def plot_distribution(counts, title, filename):
-    ids = list(counts.keys())
-    values = list(counts.values())
+    return server_ids, skipped
 
-    plt.figure(figsize=(8, 5))
-    plt.bar(ids, values, color='skyblue')
+def plot_distribution(data: dict, title: str, filename: str):
+    # 🧹 Filter out 0-values again (in case)
+    filtered = {k: v for k, v in data.items() if v > 0}
+
+    if not filtered:
+        print("[WARN] Nothing to plot — all values are zero.")
+        return
+
+    keys = sorted(filtered.keys())
+    values = [filtered[k] for k in keys]
+
+    plt.figure(figsize=(8, 4))
+    plt.bar(keys, values, color="teal")
     plt.xlabel("Server ID")
     plt.ylabel("Request Count")
     plt.title(title)
-    plt.grid(axis='y')
-    filepath = os.path.join(PLOT_DIR, filename)
-    plt.savefig(filepath)
+    plt.xticks(keys) 
+    plt.grid(True, axis='y', linestyle='--', alpha=0.3)
+    plt.tight_layout()
+
+    out_path = os.path.join(PLOT_DIR, filename)
+    plt.savefig(out_path)
     plt.close()
-    print(f"Saved plot: {filepath}")
+
 
 def analyze(counts, title=""):
     total = sum(counts.values())
@@ -65,16 +85,27 @@ def simulate_distribution(n_servers):
     server_ids, skipped = simulate_requests()
     counts = dict(Counter(server_ids))
 
-    min_val = min(counts.values()) if counts else 0
-    max_val = max(counts.values()) if counts else 0
+    # 🔍 Remove 0-counts (if any) — though Counter typically avoids this
+    filtered_counts = {sid: c for sid, c in counts.items() if c > 0}
+
+    if not filtered_counts:
+        print("[WARN] No valid requests were routed to any server.")
+        return 0
+
+    min_val = min(filtered_counts.values())
+    max_val = max(filtered_counts.values())
     spread = max_val - min_val
 
     print(f"Spread for {n_servers} servers: {spread} requests")
     print(f"Skipped due to errors: {skipped}")
-    for sid, c in sorted(counts.items()):
+    for sid, c in sorted(filtered_counts.items()):
         print(f"  Server {sid}: {c} requests")
 
-    plot_distribution(counts, f"A2: Distribution with {n_servers} Servers", f"a2_{n_servers}_servers.png")
+    plot_distribution(
+        filtered_counts,
+        title=f"A2: Distribution with {n_servers} Servers",
+        filename=f"a2_{n_servers}_servers.png"
+    )
     return spread
 
 # --- A1: Baseline Distribution ---
@@ -90,7 +121,7 @@ plot_distribution(counts_a1, "A1: Load Distribution (3 Servers)", "a1_baseline.p
 # --- A2: Server Count vs Spread ---
 print("\n--- A2: Spread vs Server Count ---")
 spreads = {}
-for s_count in [3, 5, 7]:
+for s_count in range(2, 10):  # 2 to 10 servers
     spreads[s_count] = simulate_distribution(s_count)
 
 plt.figure(figsize=(8, 5))
@@ -123,4 +154,3 @@ counts_add = dict(Counter(server_ids_after_add))
 analyze(counts_add, "A4: After Adding One Server")
 print(f"Skipped requests: {skipped_add}")
 plot_distribution(counts_add, "A4: Load Distribution After Addition", "a4_added_server.png")
-
